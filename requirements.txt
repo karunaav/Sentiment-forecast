@@ -1,11 +1,12 @@
 fastapi==0.115.0
 uvicorn==0.30.6
 pandas==2.2.3
-numpy==1.26.4
-tensorflow-cpu==2.17.0
+numpy==1.26.1
+tensorflow==2.20.0
 transformers==4.44.2
 yfinance==0.2.40
 dash==3.0.4
 dash-bootstrap-components==2.0.4
 scikit-learn==1.5.2
 requests==2.32.3
+
