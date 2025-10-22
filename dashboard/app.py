@@ -1,134 +1,192 @@
-import dash
-from dash import html, dcc, Input, Output, State
-import plotly.graph_objs as go
-import pandas as pd
-import yfinance as yf
-import datetime
+# dashboard/app.py
+import os
 import requests
-import sys, os
+import pandas as pd
+import plotly.graph_objects as go
+from datetime import date, timedelta
+from dash import Dash, dcc, html, Input, Output, State, callback_context, no_update
+import yfinance as yf
 
-# Ensure src is importable if needed
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# ====== Settings ======
+API_BASE = os.environ.get("FORECAST_API_BASE", "http://127.0.0.1:8000")
+APP_PORT = int(os.environ.get("PORT", 8050))
+FAANG = [
+    {"label": "Apple (AAPL)", "value": "AAPL"},
+    {"label": "Amazon (AMZN)", "value": "AMZN"},
+    {"label": "Meta (META)", "value": "META"},
+    {"label": "Netflix (NFLX)", "value": "NFLX"},
+    {"label": "Alphabet (GOOGL)", "value": "GOOGL"},
+]
 
-# --- Initialize app ---
-app = dash.Dash(__name__, title="AI Stock Sentiment Dashboard")
-server = app.server  # Needed if you later deploy to Render or Heroku
+def fetch_prices(ticker: str, days: int = 365) -> pd.DataFrame:
+    end = date.today()
+    start = end - timedelta(days=days * 2)
+    df = yf.download(ticker, start=start.isoformat(), end=end.isoformat(), progress=False)
+    df = df.rename(columns=str.title).reset_index()[["Date", "Close", "Volume"]]
+    df["Date"] = pd.to_datetime(df["Date"])
+    return df
 
-# --- Layout ---
+def price_and_sentiment_fig(df: pd.DataFrame, ticker: str, predicted_next_return: float | None):
+    # Sentiment proxy = normalized daily return (for display only)
+    df = df.copy()
+    df["ret"] = df["Close"].pct_change()
+    df["sent"] = (df["ret"] - df["ret"].rolling(30).mean()) / (df["ret"].rolling(30).std() + 1e-9)
+    df["sent"] = df["sent"].clip(-3, 3)
+
+    fig = go.Figure()
+    # Price line
+    fig.add_trace(go.Scatter(
+        x=df["Date"], y=df["Close"], mode="lines",
+        name="Close", line=dict(width=2)
+    ))
+    # Sentiment bars (secondary style)
+    fig.add_trace(go.Bar(
+        x=df["Date"], y=df["sent"], name="Sentiment (proxy)",
+        opacity=0.35, yaxis="y2"
+    ))
+
+    # Optional next-day marker (draw as last point/tag)
+    if predicted_next_return is not None and len(df) > 0:
+        last_close = df["Close"].iloc[-1]
+        forecast_close = last_close * (1 + predicted_next_return)
+        fig.add_trace(go.Scatter(
+            x=[df["Date"].iloc[-1] + pd.Timedelta(days=1)],
+            y=[forecast_close],
+            mode="markers+text",
+            name="Forecast",
+            marker=dict(size=10),
+            text=[f"+{predicted_next_return*100:.2f}%"],
+            textposition="top center"
+        ))
+
+    fig.update_layout(
+        template="plotly_dark",
+        margin=dict(l=40, r=30, t=50, b=40),
+        xaxis_title="Date",
+        yaxis_title="Price (USD)",
+        yaxis2=dict(overlaying="y", side="right", title="Sentiment (z)", showgrid=False),
+        legend=dict(orientation="h", y=1.1, x=0),
+        title=f"{ticker} - Price History & Forecast",
+    )
+    return fig
+
+app = Dash(__name__, title="AI Stock Sentiment Dashboard", suppress_callback_exceptions=True)
+server = app.server  # so you can deploy Dash on a WSGI/ASGI host if needed
+
+# ====== Layout (dark, blue/green accents) ======
 app.layout = html.Div(
-    style={"fontFamily": "Segoe UI", "backgroundColor": "#f8fafc", "padding": "30px"},
+    style={"backgroundColor": "#0f1220", "minHeight": "100vh", "color": "#e8f0fe", "padding": "24px"},
     children=[
-        html.H1("📊 AI Stock Sentiment & Forecast Dashboard", style={"textAlign": "center"}),
-
         html.Div(
-            [
-                html.Label("Select Stock:", style={"fontWeight": "bold", "marginRight": "10px"}),
-                dcc.Dropdown(
-                    id="ticker-dropdown",
-                    options=[
-                        {"label": "Apple (AAPL)", "value": "AAPL"},
-                        {"label": "Amazon (AMZN)", "value": "AMZN"},
-                        {"label": "Meta (META)", "value": "META"},
-                        {"label": "Netflix (NFLX)", "value": "NFLX"},
-                        {"label": "Google (GOOGL)", "value": "GOOGL"},
-                    ],
-                    value="AAPL",
-                    style={"width": "50%"},
-                ),
-                html.Button(
-                    "🔮 Forecast",
-                    id="predict-btn",
-                    n_clicks=0,
-                    style={
-                        "marginLeft": "15px",
-                        "backgroundColor": "#2563eb",
-                        "color": "white",
-                        "border": "none",
-                        "padding": "10px 20px",
-                        "cursor": "pointer",
-                        "borderRadius": "5px",
-                    },
-                ),
+            style={"textAlign": "center", "marginBottom": "16px"},
+            children=[
+                html.H1("📊 AI Stock Sentiment & Forecast Dashboard",
+                        style={"margin": 0, "fontWeight": 700}),
             ],
-            style={"display": "flex", "alignItems": "center", "justifyContent": "center", "gap": "10px"},
         ),
 
-        html.Br(),
-        html.Div(id="api-status", style={"textAlign": "center", "marginBottom": "10px"}),
-        html.Div(id="alert-box", style={"textAlign": "center"}),
+        # Controls row
+        html.Div(
+            style={"display": "flex", "gap": "12px", "justifyContent": "center", "alignItems": "center",
+                   "flexWrap": "wrap", "marginBottom": "12px"},
+            children=[
+                html.Div([
+                    html.Label("Select Stock:", style={"fontWeight": 600}),
+                    dcc.Dropdown(
+                        id="ticker-dd",
+                        options=FAANG,
+                        value="AAPL",
+                        clearable=False,
+                        style={"width": "320px", "color": "#111"}
+                    )
+                ]),
 
-        dcc.Loading(
-            id="loading-spinner",
-            type="circle",
-            color="#2563eb",
-            children=html.Div(id="forecast-output", style={"textAlign": "center", "marginTop": "20px"}),
+                html.Button("🔮 Forecast", id="predict-btn",
+                            style={"background": "#3b82f6", "border": "none", "color": "white",
+                                   "padding": "10px 16px", "borderRadius": "8px", "cursor": "pointer",
+                                   "fontWeight": 600})
+            ]
         ),
 
-        html.Hr(),
-        dcc.Graph(id="price-graph", style={"height": "70vh"}),
-
-        dcc.Interval(
-            id="auto-refresh",
-            interval=5 * 60 * 1000,  # 5 minutes
-            n_intervals=0,
+        # Status row
+        html.Div(
+            style={"display": "flex", "gap": "18px", "justifyContent": "center",
+                   "alignItems": "center", "flexWrap": "wrap", "marginBottom": "16px"},
+            children=[
+                html.Div(id="api-status", children="🔄 Checking API...", style={"color": "#22c55e"}),
+                html.Div(id="forecast-status", style={"color": "#a3e635"}),
+                html.Div(id="predicted-text", style={"fontWeight": 700}),
+            ],
         ),
-    ],
+
+        # Graph
+        dcc.Graph(id="price-graph", figure=go.Figure(),
+                  style={"height": "68vh", "backgroundColor": "#0b0e19", "borderRadius": "12px"}),
+
+        # Stores & interval
+        dcc.Store(id="pred-store"),
+        dcc.Interval(id="ping-api", interval=4_000, n_intervals=0, disabled=False),
+    ]
 )
 
-
-# --- Callbacks ---
+# ====== Callbacks ======
 @app.callback(
-    [Output("forecast-output", "children"),
-     Output("price-graph", "figure"),
-     Output("alert-box", "children"),
-     Output("api-status", "children")],
-    [Input("predict-btn", "n_clicks"),
-     Input("auto-refresh", "n_intervals")],
-    [State("ticker-dropdown", "value")],
+    Output("api-status", "children"),
+    Output("ping-api", "disabled"),
+    Input("ping-api", "n_intervals")
 )
-def update_forecast(n_clicks, n_intervals, ticker):
-    api_url = f"http://127.0.0.1:8000/predict/{ticker}"
-
-    # Check API status
+def ping_api(_):
     try:
-        status_check = requests.get("http://127.0.0.1:8000/")
-        api_status = html.Span("🟢 API Connected", style={"color": "green", "fontWeight": "bold"})
+        r = requests.get(f"{API_BASE}/health", timeout=2.5)
+        if r.ok:
+            return "🟢 API Connected", True
+        return "🔴 API Unreachable", False
     except Exception:
-        api_status = html.Span("🔴 API Offline", style={"color": "red", "fontWeight": "bold"})
-        return "", go.Figure(), html.Div("❌ API is not running."), api_status
+        return "🔴 API Unreachable", False
 
+@app.callback(
+    Output("pred-store", "data"),
+    Output("forecast-status", "children"),
+    Input("predict-btn", "n_clicks"),
+    State("ticker-dd", "value"),
+    prevent_initial_call=True
+)
+def get_prediction(n_clicks, ticker):
+    if not ticker:
+        return no_update, "⚠️ Select a ticker"
     try:
-        # Download historical data
-        df = yf.download(ticker, start="2023-01-01", end=datetime.date.today())
-        if df.empty:
-            return "", go.Figure(), html.Div("⚠️ No stock data found."), api_status
+        r = requests.get(f"{API_BASE}/predict/{ticker}", timeout=10)
+        if r.ok:
+            data = r.json()
+            return data, "✅ Forecast updated successfully!"
+        return no_update, "❌ Forecast failed."
+    except Exception:
+        return no_update, "❌ Forecast failed."
 
-        # Call prediction API
-        response = requests.get(api_url)
-        if response.status_code == 200:
-            data = response.json()
-            forecast = data.get("prediction", None)
-            forecast_str = f"Predicted next return: **{forecast:.4f}**" if forecast else "Prediction unavailable."
-        else:
-            forecast_str = "⚠️ API returned an invalid response."
+@app.callback(
+    Output("predicted-text", "children"),
+    Output("price-graph", "figure"),
+    Input("pred-store", "data"),
+    Input("ticker-dd", "value"),
+)
+def update_graph(pred_data, ticker):
+    # fetch prices for graph on any change
+    try:
+        df = fetch_prices(ticker)
+    except Exception:
+        return "⚠️ Could not load prices.", go.Figure()
 
-        # Build price chart
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=df.index, y=df["Close"], mode="lines", name="Closing Price", line=dict(color="#2563eb")))
-        fig.update_layout(
-            title=f"{ticker} - Price History & Forecast",
-            xaxis_title="Date",
-            yaxis_title="Price (USD)",
-            template="plotly_white",
-        )
+    predicted_ret = None
+    if isinstance(pred_data, dict) and pred_data.get("ticker", "").upper() == ticker:
+        predicted_ret = float(pred_data.get("predicted_return", 0.0))
+        conf = float(pred_data.get("confidence", 0.0))
+        text = f"Predicted next return: {predicted_ret:+.4f}  •  Confidence: {conf:.0%}"
+    else:
+        text = "Predicted next return: —  •  Confidence: —"
 
-        alert = html.Div("✅ Forecast updated successfully!", style={"color": "green"})
-        return dcc.Markdown(forecast_str), fig, alert, api_status
+    fig = price_and_sentiment_fig(df, ticker, predicted_ret)
+    return text, fig
 
-    except Exception as e:
-        return "", go.Figure(), html.Div(f"❌ Error: {str(e)}", style={"color": "red"}), api_status
-
-
-# --- Run ---
 if __name__ == "__main__":
-    app.run(debug=True, port=8050)
+    # Run the Dash app
+    app.run(host="0.0.0.0", port=APP_PORT, debug=True)
