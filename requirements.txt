@@ -1,25 +1,11 @@
-# Core Frameworks
-fastapi==0.115.2
-uvicorn==0.31.1
-
-# Dashboard UI
-dash==3.0.4
-dash-bootstrap-components==2.0.4
-plotly==5.24.1
-
-# Data & ML
+fastapi==0.115.0
+uvicorn==0.30.6
 pandas==2.2.3
 numpy==1.26.4
-tensorflow==2.17.0
-scikit-learn==1.5.2
+tensorflow-cpu==2.17.0
 transformers==4.44.2
-matplotlib==3.9.2
-yfinance==0.2.50
-joblib==1.4.2
-
-# Support Libraries
+yfinance==0.2.40
+dash==3.0.4
+dash-bootstrap-components==2.0.4
+scikit-learn==1.5.2
 requests==2.32.3
-pydantic[email]==2.11.7
-protobuf==4.25.4
-
-python-multipart==0.0.12
