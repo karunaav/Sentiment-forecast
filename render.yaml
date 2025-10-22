@@ -2,10 +2,13 @@ services:
   - type: web
     name: sentiment-forecast
     env: python
-    region: oregon
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn api.main:app --host 0.0.0.0 --port 10000
     plan: free
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
+    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
-        value: 3.13
+        value: 3.12.7
+      - key: TF_ENABLE_ONEDNN_OPTS
+        value: 0
