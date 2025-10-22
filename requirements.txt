@@ -151,3 +151,4 @@ wheel==0.45.1
 wrapt==2.0.0
 yfinance==0.2.66
 zipp==3.23.0
+pywin32==311; platform_system == "Windows"
