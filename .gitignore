@@ -1,0 +1,28 @@
+# Virtual environment
+venv/
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Models & data
+models/
+checkpoints/
+*.h5
+*.ckpt
+*.npy
+*.pkl
+
+# Environment and logs
+.env
+*.log
+
+# Jupyter and notebooks cache
+.ipynb_checkpoints/
+
+# System files
+.DS_Store
+Thumbs.db
