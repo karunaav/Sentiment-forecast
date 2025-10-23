@@ -189,4 +189,12 @@ def update_graph(pred_data, ticker):
     
 if __name__ == "__main__":
     app.run_server(host="0.0.0.0", port=10000)
+from fastapi import FastAPI
+import os
+
+app = FastAPI()
+
+@app.get('/')
+def home():
+    return {"message": "Hello from FastAPI on Render!"}
 
