@@ -6,6 +6,21 @@ import datetime as dt
 import numpy as np
 import pandas as pd
 import yfinance as yf
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
+
+@app.get("/")
+def home():
+    return {"message": "Sentiment Forecast API is running 🚀"}
+
+# No uvicorn.run() here — Vercel handles it automatically!
 
 app = FastAPI(title="Stock Forecasting API", version="1.0")
 
@@ -77,6 +92,4 @@ def predict_ticker(ticker: str):
     )
 
 # Optional: run API directly (useful if you expose via ngrok)
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("api.main:app", host="0.0.0.0", port=8000, reload=False)
+
