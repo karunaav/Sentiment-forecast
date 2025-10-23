@@ -186,7 +186,7 @@ def update_graph(pred_data, ticker):
 
     fig = price_and_sentiment_fig(df, ticker, predicted_ret)
     return text, fig
-
+    
 if __name__ == "__main__":
-    # Run the Dash app
-    app.run(host="0.0.0.0", port=APP_PORT, debug=True)
+    app.run_server(host="0.0.0.0", port=10000)
+
